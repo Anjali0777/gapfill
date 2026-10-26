@@ -64,7 +64,7 @@ def main() -> None:
     for _, make in STRATEGIES:
         out(table_row(run(make, Config(ticks=TICKS, network=incident)), blackout=True))
 
-    for p in (0.0001, 0.001, 0.01):
+    for p in (0.0005, 0.001, 0.01):
         out(f"\n### Random packet loss {p * 100:g}% (no blackout)\n")
         out(HEADER)
         for _, make in STRATEGIES:
