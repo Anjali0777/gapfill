@@ -1,8 +1,9 @@
 """A synthetic exchange: generates realistic order flow and serves recovery.
 
-The order flow keeps a few thousand orders resting around a random-walking
-mid price, with adds, partial cancels, executions and deletes in roughly the
+The order flow keeps a few thousand orders resting around a fixed mid
+price, with adds, partial cancels, executions and deletes in roughly the
 proportions seen on a busy US equities feed (mostly adds and cancels).
+Bids rest below the mid and asks above it, so the book never crosses.
 """
 
 from __future__ import annotations
@@ -21,7 +22,9 @@ class OrderFlow:
         self.pos: dict[int, int] = {}  # order id -> index in live
         self.qty: dict[int, int] = {}
         self.next_id = 1
-        self.mid = 10_000  # price in ticks
+        # A fixed mid keeps the book uncrossed without simulating matching,
+        # which is irrelevant to recovery. Prices are in ticks.
+        self.mid = 10_000
 
     def _remove(self, oid: int) -> None:
         i = self.pos.pop(oid)
@@ -33,8 +36,6 @@ class OrderFlow:
 
     def next(self) -> Msg:
         r = self.rng.random()
-        if r < 0.01:
-            self.mid += self.rng.choice((-1, 1))
         fill = len(self.live) / self.target
         if not self.live or r < 0.55 - 0.2 * (fill - 1):
             oid = self.next_id
