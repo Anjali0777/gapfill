@@ -3,12 +3,12 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from gapfill.book import OrderBook
-from gapfill.consumer import FullReplay
+from gapfill.consumer import FullReplay, GapFill
 from gapfill.feed import Exchange, OrderFlow
 from gapfill.messages import ADD, BUY, CANCEL, DELETE, EXECUTE, SELL, packetize
 from gapfill.sim import Config, Network, run
 
-CONSUMERS = [FullReplay]
+CONSUMERS = [FullReplay, GapFill, lambda: GapFill(snapshots=False)]
 
 
 def test_book_add_cancel_execute_delete():
@@ -80,17 +80,25 @@ net_strategy = st.builds(
 @given(net=net_strategy, flow_seed=st.integers(0, 1000), bw=st.integers(200, 3000))
 def test_any_network_fault_ends_with_exact_book(make, net, flow_seed, bw):
     """Property: whatever the network does, the book ends identical to the
-    exchange's, and the final pass applied every message once, in order."""
-    traced = []
+    exchange's, and every message was applied once, in order. Allowed
+    exceptions: a full-replay reset starts again at 1, and a snapshot restore
+    at seq S skips straight to S+1."""
+    traced: list[int] = []
+    made = []
 
     def factory():
         c = make()
         c.trace = traced
+        made.append(c)
         return c
 
     r = run(factory, Config(ticks=40, rate=100, packet_size=10, recovery_bandwidth=bw,
                             snapshot_every=500, flow_seed=flow_seed, network=net, drain_ticks=5000))
     assert r.correct
-    # The trace may restart from 1 after a reset; its final run must be 1..N.
+    restores = set(getattr(made[0], "restored_at", []))
     last_reset = max((i for i, s in enumerate(traced) if s == 1), default=0)
-    assert traced[last_reset:] == list(range(1, r.published + 1))
+    run_ = traced[last_reset:]
+    assert run_ and run_[0] == 1 or (run_ and run_[0] - 1 in restores)
+    for a, b in zip(run_, run_[1:]):
+        assert b == a + 1 or (b > a and b - 1 in restores), f"jump {a} -> {b} not explained by a snapshot"
+    assert run_[-1] == r.published

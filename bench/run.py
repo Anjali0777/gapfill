@@ -16,13 +16,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from gapfill.consumer import FullReplay
+from gapfill.consumer import FullReplay, GapFill
 from gapfill.sim import Config, Network, run
 
 QUICK = "--quick" in sys.argv
 TICKS = 300 if QUICK else 1200
 
-STRATEGIES = [("full replay", FullReplay)]
+STRATEGIES = [
+    ("full replay", FullReplay),
+    ("range gap-fill", lambda: GapFill(snapshots=False)),
+    ("gap-fill + snapshot", GapFill),
+]
 
 
 def fmt_ticks(t):

@@ -73,16 +73,21 @@ class RecoveryServer:
         budget = self.bw
         while budget > 0 and self.queue:
             item = self.queue[0]
-            c, req, done = item
+            c, req, done = item[0], item[1], item[2]
             if req[0] == "snapshot":
-                seq, snap = self.x.latest_snapshot()
+                # Snapshots stream over as many ticks as their size needs.
+                # The content is fixed when sending starts.
+                if len(item) == 3:
+                    item.append(self.x.latest_snapshot())
+                seq, snap = item[3]
                 cost = max(1, len(snap))
-                if cost > budget and budget < self.bw:
-                    break  # send whole snapshots only; wait for a fresh tick
-                budget -= cost
-                self.sent += cost
-                self.queue.popleft()
-                c.on_snapshot(seq, snap)
+                n = min(budget, cost - done)
+                budget -= n
+                self.sent += n
+                item[2] += n
+                if item[2] >= cost:
+                    self.queue.popleft()
+                    c.on_snapshot(seq, snap)
                 continue
             _, first, last = req
             start = first + done
@@ -141,9 +146,7 @@ def run(make: type[Consumer] | callable, cfg: Config) -> Result:
             held = []
             # Heartbeats carry the latest sequence number, so a consumer that
             # lost the tail of the feed still learns it is behind.
-            if c.high_water < x.head:
-                c.high_water = x.head
-                c.on_messages(x.head + 1, (), True)
+            c.on_heartbeat(x.head)
 
         for req in c.requests(tick):
             server.submit(c, req)
